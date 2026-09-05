@@ -28,7 +28,7 @@
     background:#060708;
     color:var(--cream);
     min-height:100vh;
-    padding:0 0 80px;
+    padding:0 0 32px;
     position:relative;
     overflow-x:hidden;
   }
@@ -208,6 +208,81 @@
   }
   textarea{resize:vertical; min-height:96px; line-height:1.5;}
 
+  .file-hidden{
+    position:absolute;
+    width:1px; height:1px;
+    padding:0; margin:-1px;
+    overflow:hidden;
+    clip:rect(0,0,0,0);
+    white-space:nowrap;
+    border:0;
+  }
+  .filedrop{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    width:100%;
+    padding:12px 14px;
+    border:1.5px dashed var(--line);
+    border-radius:10px;
+    font-size:14px;
+    color:var(--cream-dim);
+    background:#0b0d11;
+    cursor:pointer;
+    transition:border-color .2s, background .2s, color .2s;
+  }
+  .filedrop::before{
+    content:"📎";
+    font-size:15px;
+  }
+  .filedrop:hover{border-color:var(--cyan); color:var(--cream);}
+  .filedrop.has-file{
+    border-style:solid;
+    border-color:var(--cyan-dim);
+    color:var(--cream);
+    background:rgba(34,198,224,.06);
+  }
+  .filedrop.file-error{
+    border-color:var(--coral);
+    color:var(--coral);
+    background:rgba(239,109,109,.06);
+  }
+
+  .upload-progress{
+    display:none;
+    align-items:center;
+    gap:10px;
+    margin-top:10px;
+  }
+  .upload-progress.active{display:flex;}
+  .upload-progress-track{
+    flex:1;
+    height:8px;
+    border-radius:999px;
+    background:#181b21;
+    overflow:hidden;
+  }
+  .upload-progress-bar{
+    height:100%;
+    width:0%;
+    border-radius:999px;
+    background:linear-gradient(90deg, var(--cyan), var(--coral));
+    background-size:200% 100%;
+    animation:progressShimmer 1.4s linear infinite;
+    transition:width .25s ease;
+  }
+  @keyframes progressShimmer{
+    from{background-position:0% 0;}
+    to{background-position:-200% 0;}
+  }
+  .upload-progress-label{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    color:var(--cream-dim);
+    min-width:34px;
+    text-align:right;
+  }
+
   button{
     position:relative;
     width:100%;
@@ -275,7 +350,7 @@
 
   /* ---- Mobile ---- */
   @media (max-width: 480px){
-    body{padding:0 0 48px;}
+    body{padding:0 0 24px;}
 
     .hero{padding:32px 16px 32px;}
     .badge{
@@ -374,6 +449,20 @@
           <textarea id="experience" name="experience" placeholder="Radio, prise de parole, montage vidéo... si tu as déjà touché à quelque chose de similaire."></textarea>
         </div>
 
+        <div class="field">
+          <label for="pdf">CV / Lettre <span class="opt">— PDF, Word ou image · 10 Mo max</span></label>
+          <label for="pdf" class="filedrop" id="filedropLabel">
+            <span id="filedropText">Choisir un document…</span>
+          </label>
+          <input type="file" id="pdf" name="pdf" accept=".pdf,.doc,.docx,.odt,.rtf,.jpg,.jpeg,.png" class="file-hidden">
+          <div class="upload-progress" id="uploadProgress">
+            <div class="upload-progress-track">
+              <div class="upload-progress-bar" id="uploadProgressBar"></div>
+            </div>
+            <span class="upload-progress-label" id="uploadProgressLabel">0%</span>
+          </div>
+        </div>
+
         <button type="submit" id="submitBtn">
           <span class="spinner"></span>
           <span class="btn-label">Envoyer ma candidature</span>
@@ -387,11 +476,86 @@
 </div>
 
 <script>
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwaDIP2jzLi54aEstqW32na-5KCvngUZ8Jqi3GjVs6f9CnnO6Ut_xR1EbjXReVHGEbd/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzemIdy00S6pd74hY0yEqufTRcwPbnZPGNsxBJW6dVjhmCsBjxFhMWOZ4bYyMKIzK7Y/exec";
 
 const form = document.getElementById('candidatureForm');
 const btn = document.getElementById('submitBtn');
 const status = document.getElementById('status');
+const pdfInput = document.getElementById('pdf');
+const filedropLabel = document.getElementById('filedropLabel');
+const filedropText = document.getElementById('filedropText');
+const uploadProgress = document.getElementById('uploadProgress');
+const uploadProgressBar = document.getElementById('uploadProgressBar');
+const uploadProgressLabel = document.getElementById('uploadProgressLabel');
+
+const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 Mo
+const ALLOWED_EXT = ['pdf', 'doc', 'docx', 'odt', 'rtf', 'jpg', 'jpeg', 'png'];
+
+function getExt(filename){
+  return filename.split('.').pop().toLowerCase();
+}
+
+pdfInput.addEventListener('change', function(){
+  const file = pdfInput.files[0];
+  filedropLabel.classList.remove('has-file', 'file-error');
+
+  if (!file) {
+    filedropText.textContent = "Choisir un document…";
+    return;
+  }
+  if (!ALLOWED_EXT.includes(getExt(file.name))) {
+    filedropText.textContent = "Format non accepté (PDF, Word ou image) — réessaie.";
+    filedropLabel.classList.add('file-error');
+    pdfInput.value = "";
+    return;
+  }
+  if (file.size > MAX_FILE_BYTES) {
+    filedropText.textContent = "Fichier trop lourd (10 Mo max) — réessaie.";
+    filedropLabel.classList.add('file-error');
+    pdfInput.value = "";
+    return;
+  }
+  filedropText.textContent = "📄 " + file.name + " (" + (file.size / 1024 / 1024).toFixed(1) + " Mo)";
+  filedropLabel.classList.add('has-file');
+});
+
+function fileToBase64(file){
+  return new Promise(function(resolve, reject){
+    const reader = new FileReader();
+    reader.onload = function(){
+      // strip the "data:...;base64," prefix
+      resolve(reader.result.split(',')[1]);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// XMLHttpRequest instead of fetch: fetch has no reliable upload-progress event,
+// XHR's upload.onprogress gives us real percentages for the progress bar.
+// Note: Apps Script doesn't send CORS headers, so the browser can never read
+// the actual response — onload/onerror both just mean "the request finished
+// firing", not "it succeeded or failed". We resolve on both, same as the
+// previous no-cors fetch, since there's no reliable way to read real status here.
+function sendWithProgress(url, payload){
+  return new Promise(function(resolve){
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url, true);
+    xhr.setRequestHeader('Content-Type', 'text/plain;charset=utf-8');
+
+    xhr.upload.onprogress = function(evt){
+      if (evt.lengthComputable) {
+        const pct = Math.round((evt.loaded / evt.total) * 100);
+        uploadProgressBar.style.width = pct + '%';
+        uploadProgressLabel.textContent = pct + '%';
+      }
+    };
+
+    xhr.onload = function(){ resolve(); };
+    xhr.onerror = function(){ resolve(); }; // opaque cross-origin response, not a real failure signal
+    xhr.send(payload);
+  });
+}
 
 form.addEventListener('submit', async function(e){
   e.preventDefault();
@@ -408,20 +572,40 @@ form.addEventListener('submit', async function(e){
     experience: document.getElementById('experience').value.trim()
   };
 
+  const docFile = pdfInput.files[0];
+  if (docFile) {
+    try {
+      data.pdfName = docFile.name;
+      data.pdfBase64 = await fileToBase64(docFile);
+    } catch (err) {
+      status.textContent = "✕ Impossible de lire le fichier. Réessaie sans document ou avec un autre.";
+      status.className = 'status error';
+      status.scrollIntoView({behavior:'smooth', block:'center'});
+      return;
+    }
+  }
+
   btn.classList.add('loading');
   btn.disabled = true;
 
+  if (docFile) {
+    uploadProgress.classList.add('active');
+    uploadProgressBar.style.width = '0%';
+    uploadProgressLabel.textContent = '0%';
+  }
+
   try {
-    await fetch(SCRIPT_URL, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(data)
-    });
+    // POST required here: a base64-encoded document is far too large for a GET URL.
+    await sendWithProgress(SCRIPT_URL, JSON.stringify(data));
+
+    uploadProgressBar.style.width = '100%';
+    uploadProgressLabel.textContent = '100%';
 
     status.textContent = "✓ Candidature envoyée. On revient vers toi vite !";
     status.className = 'status success';
     form.reset();
+    filedropText.textContent = "Choisir un document…";
+    filedropLabel.classList.remove('has-file', 'file-error');
 
   } catch (err) {
     status.textContent = "✕ Erreur d'envoi. Réessaie ou écris directement à l'équipe.";
@@ -430,9 +614,27 @@ form.addEventListener('submit', async function(e){
   } finally {
     btn.classList.remove('loading');
     btn.disabled = false;
+    setTimeout(function(){
+      uploadProgress.classList.remove('active');
+      uploadProgressBar.style.width = '0%';
+      uploadProgressLabel.textContent = '0%';
+    }, 900);
     status.scrollIntoView({behavior:'smooth', block:'center'});
+    sendHeight();
   }
 });
+
+/* ---- Auto-resize: tell the parent page (iframe host) our real height ---- */
+function sendHeight(){
+  const h = document.documentElement.scrollHeight;
+  window.parent.postMessage({ type: 'martinews-form-height', height: h }, '*');
+}
+window.addEventListener('load', sendHeight);
+window.addEventListener('resize', sendHeight);
+// content height can change after fonts load or field animations settle
+setTimeout(sendHeight, 300);
+setTimeout(sendHeight, 1000);
+new ResizeObserver(sendHeight).observe(document.body);
 </script>
 
 </body>
