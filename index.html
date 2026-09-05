@@ -519,10 +519,18 @@ pdfInput.addEventListener('change', function(){
   filedropLabel.classList.add('has-file');
 });
 
-function fileToBase64(file){
+function fileToBase64(file, onProgress){
   return new Promise(function(resolve, reject){
     const reader = new FileReader();
+    reader.onprogress = function(evt){
+      if (evt.lengthComputable && onProgress) {
+        // encoding phase = first 40% of the bar
+        const pct = Math.round((evt.loaded / evt.total) * 40);
+        onProgress(pct);
+      }
+    };
     reader.onload = function(){
+      if (onProgress) onProgress(40);
       // strip the "data:...;base64," prefix
       resolve(reader.result.split(',')[1]);
     };
@@ -531,29 +539,29 @@ function fileToBase64(file){
   });
 }
 
-// XMLHttpRequest instead of fetch: fetch has no reliable upload-progress event,
-// XHR's upload.onprogress gives us real percentages for the progress bar.
-// Note: Apps Script doesn't send CORS headers, so the browser can never read
-// the actual response — onload/onerror both just mean "the request finished
-// firing", not "it succeeded or failed". We resolve on both, same as the
-// previous no-cors fetch, since there's no reliable way to read real status here.
-function sendWithProgress(url, payload){
+// IMPORTANT: Apps Script never returns CORS headers, so a normal XHR/fetch
+// (cors mode) gets blocked outright — that's the "blocked by CORS policy"
+// error. mode:'no-cors' is the only way to actually deliver the request; the
+// trade-off is we lose the ability to read the response or track real upload
+// progress. We simulate a smooth progress climb (40% → 90%) while the no-cors
+// fetch is in flight, then snap to 100% once it resolves.
+function sendNoCors(url, payload, onProgress){
   return new Promise(function(resolve){
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', url, true);
-    xhr.setRequestHeader('Content-Type', 'text/plain;charset=utf-8');
+    let pct = 40;
+    const ticker = setInterval(function(){
+      pct = Math.min(pct + Math.random() * 8, 90);
+      if (onProgress) onProgress(Math.round(pct));
+    }, 180);
 
-    xhr.upload.onprogress = function(evt){
-      if (evt.lengthComputable) {
-        const pct = Math.round((evt.loaded / evt.total) * 100);
-        uploadProgressBar.style.width = pct + '%';
-        uploadProgressLabel.textContent = pct + '%';
-      }
-    };
-
-    xhr.onload = function(){ resolve(); };
-    xhr.onerror = function(){ resolve(); }; // opaque cross-origin response, not a real failure signal
-    xhr.send(payload);
+    fetch(url, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: payload
+    }).finally(function(){
+      clearInterval(ticker);
+      resolve();
+    });
   });
 }
 
@@ -573,17 +581,6 @@ form.addEventListener('submit', async function(e){
   };
 
   const docFile = pdfInput.files[0];
-  if (docFile) {
-    try {
-      data.pdfName = docFile.name;
-      data.pdfBase64 = await fileToBase64(docFile);
-    } catch (err) {
-      status.textContent = "✕ Impossible de lire le fichier. Réessaie sans document ou avec un autre.";
-      status.className = 'status error';
-      status.scrollIntoView({behavior:'smooth', block:'center'});
-      return;
-    }
-  }
 
   btn.classList.add('loading');
   btn.disabled = true;
@@ -594,12 +591,31 @@ form.addEventListener('submit', async function(e){
     uploadProgressLabel.textContent = '0%';
   }
 
+  const setPct = function(pct){
+    uploadProgressBar.style.width = pct + '%';
+    uploadProgressLabel.textContent = pct + '%';
+  };
+
+  if (docFile) {
+    try {
+      data.pdfName = docFile.name;
+      data.pdfBase64 = await fileToBase64(docFile, setPct);
+    } catch (err) {
+      status.textContent = "✕ Impossible de lire le fichier. Réessaie sans document ou avec un autre.";
+      status.className = 'status error';
+      status.scrollIntoView({behavior:'smooth', block:'center'});
+      btn.classList.remove('loading');
+      btn.disabled = false;
+      uploadProgress.classList.remove('active');
+      return;
+    }
+  }
+
   try {
     // POST required here: a base64-encoded document is far too large for a GET URL.
-    await sendWithProgress(SCRIPT_URL, JSON.stringify(data));
+    await sendNoCors(SCRIPT_URL, JSON.stringify(data), docFile ? setPct : null);
 
-    uploadProgressBar.style.width = '100%';
-    uploadProgressLabel.textContent = '100%';
+    if (docFile) setPct(100);
 
     status.textContent = "✓ Candidature envoyée. On revient vers toi vite !";
     status.className = 'status success';
